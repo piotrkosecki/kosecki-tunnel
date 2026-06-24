@@ -34,15 +34,32 @@ section() { echo; echo "── $* ──"; }
 
 gcloud --project "$PROJECT" config set compute/region "$REGION" >/dev/null
 gcloud --project "$PROJECT" config set compute/zone "$ZONE" >/dev/null
-gcloud --project "$PROJECT" config set compute/ssh_key_file "$HOME/.ssh/id_ed25519" >/dev/null
 gcloud --project "$PROJECT" config set core/disable_prompts true >/dev/null
+
+# Make gcloud compute ssh use this machine's id_ed25519 by adding a host block.
+# gcloud doesn't ship a clean config knob for "use my existing key, not the
+# generated google_compute_engine one" — we just write to ~/.ssh/config.
+SSH_CONFIG="$HOME/.ssh/config"
+SSH_CONFIG_BLOCK="\
+# --- kosecki-tunnel (added by infra/create-vm.sh) ---
+Host $VM_NAME *.${ZONE}.*.compute.google.com *.compute.google.com
+    IdentityFile $HOME/.ssh/id_ed25519
+    IdentitiesOnly yes
+    StrictHostKeyChecking accept-new
+"
+if [[ -f "$SSH_CONFIG" ]] && grep -qF 'kosecki-tunnel (added by infra/create-vm.sh)' "$SSH_CONFIG"; then
+    echo "(ssh config block already present, skipping)"
+else
+    printf '\n%s\n' "$SSH_CONFIG_BLOCK" >> "$SSH_CONFIG"
+    chmod 0600 "$SSH_CONFIG"
+    echo "wrote SSH config block to $SSH_CONFIG"
+fi
 
 section "Static external IP ($IP_NAME)"
 if ! gcloud --project "$PROJECT" compute addresses describe "$IP_NAME" --region "$REGION" >/dev/null 2>&1; then
   gcloud --project "$PROJECT" compute addresses create "$IP_NAME" \
       --region "$REGION" \
-      --description "Static IP for kosecki.dev tunnel VM" \
-      --labels "purpose=kosecki-tunnel"
+      --description "Static IP for kosecki.dev tunnel VM"
 else
   echo "(already exists, skipping)"
 fi
@@ -55,8 +72,7 @@ if ! gcloud --project "$PROJECT" compute firewall-rules describe "$WEB_FW" >/dev
       --allow "tcp:80,tcp:443" \
       --source-ranges "0.0.0.0/0" \
       --target-tags "http-server,https-server" \
-      --description "Public HTTP/HTTPS for kosecki.dev" \
-      --labels "purpose=kosecki-tunnel"
+      --description "Public HTTP/HTTPS for kosecki.dev"
 else
   echo "(already exists, skipping)"
 fi
@@ -66,8 +82,7 @@ if ! gcloud --project "$PROJECT" compute firewall-rules describe "$SSH_FW" >/dev
   gcloud --project "$PROJECT" compute firewall-rules create "$SSH_FW" \
       --allow "tcp:22" \
       --source-ranges "0.0.0.0/0" \
-      --description "SSH for kosecki-tunnel-vm (key auth only)" \
-      --labels "purpose=kosecki-tunnel"
+      --description "SSH for kosecki-tunnel-vm (key auth only)"
 else
   echo "(already exists, skipping)"
 fi
@@ -79,14 +94,13 @@ if ! gcloud --project "$PROJECT" compute instances describe "$VM_NAME" --zone "$
       --zone "$ZONE" \
       --machine-type "$MACHINE" \
       --image-family "debian-12" --image-project "debian-cloud" \
-      --address "$IP_NAME" \
-      --network-interface "network-tier=PREMIUM,subnet=default" \
+      --network-interface "network-tier=PREMIUM,subnet=default,address=$IP_NAME" \
       --tags "$TAGS" \
       --metadata "ssh-keys=$ssh_keys_meta" \
       --scopes "cloud-platform" \
       --labels "purpose=kosecki-tunnel" \
       --boot-disk-size "10GB" --boot-disk-type "pd-balanced" \
-      --boot-disk-auto-deletion
+      --boot-disk-auto-delete
 else
   echo "(already exists, skipping)"
 fi
