@@ -1,0 +1,8 @@
+*.bak
+*.swp
+.DS_Store
+# Never commit secrets
+.env
+.env.local
+*.token
+secrets/
