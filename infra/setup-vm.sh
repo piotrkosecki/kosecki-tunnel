@@ -29,6 +29,9 @@ cat > /etc/caddy/Caddyfile <<EOF
 # TLS is auto-issued by Let's Encrypt via HTTP-01; Cloudflare proxy mode
 # MUST be OFF (gray cloud) for this to succeed. .dev is on the HSTS preload
 # list, so HTTP->HTTPS redirects are mandatory and free.
+#
+# Note: Caddy's reverse_proxy already forwards X-Forwarded-For / -Proto /
+# X-Real-IP to the upstream automatically — no need to spell them out.
 
 *.${DOMAIN}, ${DOMAIN} {
     reverse_proxy 127.0.0.1:${TUNNEL_PORT} {
@@ -44,19 +47,15 @@ cat > /etc/caddy/Caddyfile <<EOF
 
     encode zstd gzip
 
-    # pass original client IP through to the upstream gateway
-    header_up X-Real-IP {remote_host}
-    header_up X-Forwarded-For {remote_host}
-    header_up X-Forwarded-Proto {scheme}
-
-    # long-poll states it's healthy
-    header_down Cache-Control "no-cache, no-store, must-revalidate"
+    # Cache control for long-poll endpoints. Block form sets the header
+    # on every response (root-level directive in Caddy v2).
+    header {
+        Cache-Control "no-cache, no-store, must-revalidate"
+        Pragma "no-cache"
+        Expires "0"
+    }
 }
-
-import /etc/caddy/sites/*.caddy
 EOF
-mkdir -p /etc/caddy/sites
-: > /etc/caddy/sites/.keep
 
 echo "── hardening sshd (key-only auth) ──"
 SSHD="/etc/ssh/sshd_config"

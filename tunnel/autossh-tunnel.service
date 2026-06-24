@@ -1,18 +1,21 @@
 [Unit]
 Description=Reverse SSH tunnel: VM:8080 -> localhost:3080 (ngrok-gateway)
+Documentation=https://github.com/piotrkosecki/kosecki-tunnel
 After=ngrok-gateway.service network-online.target
 Wants=ngrok-gateway.service
 
 [Service]
 Type=simple
-Environment="AUTOSSH_GATETIME=0"
-Environment="AUTOSSH_PORT=22"
-ExecStart=/usr/bin/autossh -M 0 -N \
+# Plain OpenSSH — systemd's Restart=always recreates the tunnel on disconnect.
+# ServerAliveInterval + ServerAliveCountMax (~60s of liveness) catches a
+# frozen connection and lets systemd restart cleanly. No external deps
+# (no autossh binary needed). Drop-in replacement for autossh's logic.
+ExecStart=/usr/bin/ssh -N \
   -o "ServerAliveInterval=20" \
   -o "ServerAliveCountMax=3" \
   -o "ExitOnForwardFailure=yes" \
   -o "StrictHostKeyChecking=accept-new" \
-  -i /home/pk/.ssh/id_ed25519 \
+  -i %h/.ssh/id_ed25519 \
   -R 8080:127.0.0.1:3080 \
   pk@KOSECKI_TUNNEL_HOST
 Restart=always

@@ -36,11 +36,13 @@ CF_API_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxx bash dns/setup-cloudflare.sh <STATIC_IP>
 # or manually — see dns/setup-dns-manual.md
 
 # 4. Start the reverse tunnel locally (one-time, persists across reboots).
-sudo install -m 0755 /usr/bin/autossh /usr/bin/autossh 2>/dev/null || sudo apt-get install -y autossh
-# Edit tunnel/autossh-tunnel.service — replace KOSECKI_TUNNEL_HOST with the VM's IP or hostname
-sudo cp tunnel/autossh-tunnel.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now autossh-tunnel.service
+#    Drop the unit into your user systemd dir — works because Linger=yes is on.
+mkdir -p ~/.config/systemd/user
+sed "s/KOSECKI_TUNNEL_HOST/<STATIC_IP>" tunnel/autossh-tunnel.service \
+    > ~/.config/systemd/user/autossh-tunnel.service
+systemctl --user daemon-reload
+systemctl --user enable --now autossh-tunnel.service
+systemctl --user status autossh-tunnel.service
 
 # 5. Verify
 curl -I https://kosecki.dev/
